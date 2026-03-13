@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Mobile Milky Way Galaxy</title>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+
+<style>
+
+body{
+margin:0;
+overflow:hidden;
+background: radial-gradient(circle,#2a0040,#000000);
+font-family:Arial;
+}
+
+#info{
+position:absolute;
+top:10px;
+left:10px;
+color:white;
+background:rgba(0,0,0,0.5);
+padding:10px;
+border-radius:8px;
+font-size:13px;
+}
+
+</style>
+</head>
+
+<body>
+
+<div id="info">
+✊ Fist → Zoom Out<br>
+🤏 Pinch → Zoom In<br>
+✋ Move Hand → Rotate Galaxy
+</div>
+
+<video id="video" style="display:none"></video>
+
+<script>
+
+// THREE SCENE
+
+const scene = new THREE.Scene();
+
+const camera = new THREE.PerspectiveCamera(
+70,
+window.innerWidth/window.innerHeight,
+0.1,
+3000
+);
+
+const renderer = new THREE.WebGLRenderer({alpha:true});
+renderer.setSize(window.innerWidth,window.innerHeight);
+renderer.setPixelRatio(window.devicePixelRatio);
+
+document.body.appendChild(renderer.domElement);
+
+camera.position.z = 60;
+
+
+// CREATE MILKY WAY
+
+function createGalaxy(){
+
+const stars = 20000;
+const arms = 4;
+
+const geometry = new THREE.BufferGeometry();
+const positions = [];
+const colors = [];
+
+const innerColor = new THREE.Color("#ffd6ff");
+const outerColor = new THREE.Color("#330066");
+
+for(let i=0;i<stars;i++){
+
+const radius = Math.random()*55;
+
+const branch = (i%arms)/arms*Math.PI*2;
+
+const spin = radius*0.3;
+
+const randomness = 2;
+
+const x = Math.cos(branch+spin)*radius + (Math.random()-0.5)*randomness;
+const y = (Math.random()-0.5)*4;
+const z = Math.sin(branch+spin)*radius + (Math.random()-0.5)*randomness;
+
+positions.push(x,y,z);
+
+const color = innerColor.clone();
+color.lerp(outerColor,radius/55);
+
+colors.push(color.r,color.g,color.b);
+
+}
+
+geometry.setAttribute(
+'position',
+new THREE.Float32BufferAttribute(positions,3)
+);
+
+geometry.setAttribute(
+'color',
+new THREE.Float32BufferAttribute(colors,3)
+);
+
+const material = new THREE.PointsMaterial({
+size:0.25,
+vertexColors:true
+});
+
+const galaxy = new THREE.Points(geometry,material);
+
+scene.add(galaxy);
+
+return galaxy;
+
+}
+
+const galaxy = createGalaxy();
+
+
+// ANIMATION
+
+let zoomIn=false;
+let zoomOut=false;
+
+function animate(){
+
+requestAnimationFrame(animate);
+
+// continuous rotation
+galaxy.rotation.y += 0.001;
+
+if(zoomIn) camera.position.z -= 0.8;
+if(zoomOut) camera.position.z += 0.8;
+
+renderer.render(scene,camera);
+
+}
+
+animate();
+
+
+// MEDIAPIPE HAND TRACKING
+
+const video = document.getElementById("video");
+
+const hands = new Hands({
+locateFile:(file)=>{
+return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+}
+});
+
+hands.setOptions({
+maxNumHands:1,
+modelComplexity:1,
+minDetectionConfidence:0.7,
+minTrackingConfidence:0.7
+});
+
+hands.onResults(results=>{
+
+zoomIn=false;
+zoomOut=false;
+
+if(results.multiHandLandmarks.length>0){
+
+const lm = results.multiHandLandmarks[0];
+
+const x = lm[8].x;
+const y = lm[8].y;
+
+// 360 rotation
+galaxy.rotation.y += (x-0.5)*0.06;
+galaxy.rotation.x += (y-0.5)*0.06;
+
+
+// pinch detection
+
+const thumb = lm[4];
+const index = lm[8];
+
+const dx = thumb.x-index.x;
+const dy = thumb.y-index.y;
+
+const pinch = Math.sqrt(dx*dx+dy*dy);
+
+
+// fist detection
+
+const tip = lm[8];
+const base = lm[6];
+
+const closed = Math.abs(tip.y-base.y)<0.03;
+
+
+// gestures
+
+if(pinch<0.04) zoomIn=true;
+
+if(closed && pinch>0.06) zoomOut=true;
+
+}
+
+});
+
+
+// MOBILE CAMERA
+
+const cam = new Camera(video,{
+onFrame: async ()=>{
+await hands.send({image:video});
+},
+width:480,
+height:360
+});
+
+cam.start();
+
+
+// RESPONSIVE
+
+window.addEventListener("resize",()=>{
+
+camera.aspect = window.innerWidth/window.innerHeight;
+
+camera.updateProjectionMatrix();
+
+renderer.setSize(window.innerWidth,window.innerHeight);
+
+});
+
+</script>
+
+</body>
+</html>
